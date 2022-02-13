@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export LC_ALL=C
+export LC_ALL=en_US.UTF-8
 export LD_LIBRARY_PATH=
 unset RK_CFG_TOOLCHAIN
 
@@ -39,7 +39,7 @@ function choose_target_board()
 {
 	echo
 	echo "You're building on Linux"
-	echo "Lunch menu...pick a combo:"
+	echo "Launch menu...pick a combo:"
 	echo ""
 
 	echo "0. default BoardConfig.mk"
@@ -52,14 +52,14 @@ function choose_target_board()
 	if echo $INDEX | grep -vq [^0-9]; then
 		RK_BUILD_TARGET_BOARD="${RK_TARGET_BOARD_ARRAY[$INDEX]}"
 	else
-		echo "Lunching for Default BoardConfig.mk boards..."
+		echo "Launching for Default BoardConfig.mk boards..."
 		RK_BUILD_TARGET_BOARD=BoardConfig.mk
 	fi
 }
 
 function build_select_board()
 {
-	RK_TARGET_BOARD_ARRAY=( $(cd ${TARGET_PRODUCT_DIR}/; ls BoardConfig*.mk | sort) )
+	RK_TARGET_BOARD_ARRAY=( $(cd ${TARGET_PRODUCT_DIR}/; ls *.mk | sort) )
 
 	RK_TARGET_BOARD_ARRAY_LEN=${#RK_TARGET_BOARD_ARRAY[@]}
 	if [ $RK_TARGET_BOARD_ARRAY_LEN -eq 0 ]; then
@@ -70,13 +70,38 @@ function build_select_board()
 	choose_target_board
 
 	ln -rfs $TARGET_PRODUCT_DIR/$RK_BUILD_TARGET_BOARD device/rockchip/.BoardConfig.mk
+
+	unset RK_PACKAGE_FILE
+	source $TARGET_PRODUCT_DIR/$RK_BUILD_TARGET_BOARD
+	if [[ x"$RK_PACKAGE_FILE" != x ]];then
+		PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware/rockdev/
+		cd $PACK_TOOL_DIR
+		rm -f package-file
+		ln -sf $RK_PACKAGE_FILE package-file
+	fi
+
+	if [[ x"$RK_PARAMETER" != x ]];then
+		PARAMETER=$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_PARAMETER
+		ln -sf $PARAMETER $ROCKDEV/parameter.txt
+	else
+		echo -e "\e[31m error: $SD_PARAMETER not found! \e[0m"
+	fi
+
+    MKUPDATE_FILE=${RK_TARGET_PRODUCT}-mkupdate.sh
+    if [[ x"$MKUPDATE_FILE" != x-mkupdate.sh ]];then
+		PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware/rockdev/
+		cd $PACK_TOOL_DIR
+		rm -f mkupdate.sh
+		ln -sf $MKUPDATE_FILE mkupdate.sh
+	fi
+
 	echo "switching to board: `realpath $BOARD_CONFIG`"
 }
 
 function unset_board_config_all()
 {
 	local tmp_file=`mktemp`
-	grep -oh "^export.*RK_.*=" `find device -name "Board*.mk"` > $tmp_file
+	grep -o "^export.*RK_.*=" `find $TOP_DIR/device/rockchip -name "Board*.mk" -type f` -h | sort | uniq > $tmp_file
 	source $tmp_file
 	rm -f $tmp_file
 }
@@ -84,7 +109,7 @@ function unset_board_config_all()
 CMD=`realpath $0`
 COMMON_DIR=`dirname $CMD`
 TOP_DIR=$(realpath $COMMON_DIR/../../..)
-cd $TOP_DIR
+IMGNAME=
 
 BOARD_CONFIG=$TOP_DIR/device/rockchip/.BoardConfig.mk
 TARGET_PRODUCT="$TOP_DIR/device/rockchip/.target_product"
@@ -95,7 +120,18 @@ if [ ! -L "$BOARD_CONFIG" -a  "$1" != "lunch" ]; then
 fi
 unset_board_config_all
 [ -L "$BOARD_CONFIG" ] && source $BOARD_CONFIG
-source device/rockchip/common/Version.mk
+source $TOP_DIR/device/rockchip/common/Version.mk
+CFG_DIR=$TOP_DIR/device/rockchip
+ROCKDEV=$TOP_DIR/rockdev
+PARAMETER=$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_PARAMETER
+SD_PARAMETER=$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_SD_PARAMETER
+
+NPROC=`nproc`
+export RK_JOBS=$NPROC
+
+if [ ! -d "$TOP_DIR/rockdev/pack" ];then
+	mkdir -p rockdev/pack
+fi
 
 function prebuild_uboot()
 {
@@ -155,6 +191,83 @@ function usageuboot()
 	finish_build
 }
 
+function changekernel()
+{
+	check_config RK_KERNEL_VERSION || return 0
+	
+	echo "link kernel to proper kernel-directory"
+	
+	kerck=$TOP_DIR/kernel
+	
+	if [[ -L $kerck && -d $kerck ]]
+		then
+        rm $kerck
+		echo "renew kernel to proper kernel-directory"
+	else 
+		echo "!! Own Kernel ? !!"
+	fi
+
+	if [ "$RK_KERNEL_VERSION" == "4" ]; then
+		ln -rfs $TOP_DIR/kernel-4.19 $kerck
+		echo "link kernel $RK_KERNEL_VERSION"
+	
+	else
+	
+	if [ "$RK_KERNEL_VERSION" == "5" ]; then
+		echo $TOP_DIR
+		ln -rfs $TOP_DIR/kernel-5.10 $kerck
+		echo "link kernel $RK_KERNEL_VERSION"		
+	fi
+	fi
+		
+} 
+function changedebian()
+{
+	check_config RK_DEBIAN_VERSION || return 0
+	
+	echo "link Debian to proper Debian-distro"
+	
+	derck=$TOP_DIR/debian
+	
+	if [[ -L $derck && -d $derck ]]
+		then
+        rm $derck
+		echo "renew Debian to proper Debian-Distro"
+	else 
+		echo "!! Own Debian ? !!"
+	fi
+	
+	echo "link debian to bullseye or buster"
+	
+	if [ "$RK_DEBIAN_VERSION" == "buster" ]; then
+		if [ "$RK_KERNEL_VERSION" == "4" ]; then
+			ln -rsf $TOP_DIR/debian-buster-4 $derck
+			echo "link kernel $RK_KERNEL_VERSION"
+		fi
+	
+		if [ "$RK_KERNEL_VERSION" == "5" ]; then
+			echo $TOP_DIR
+			ln -rsf $TOP_DIR/debian-buster-5 $derck
+			echo "link kernel $RK_KERNEL_VERSION"		
+		fi
+		fi
+		
+		
+	if [ "$RK_DEBIAN_VERSION" == "bullseye" ]; then
+		if [ "$RK_KERNEL_VERSION" == "4" ]; then
+			ln -rsf $TOP_DIR/debian-bullseye-4 $derck
+			echo "link kernel $RK_KERNEL_VERSION"
+		fi
+	
+		if [ "$RK_KERNEL_VERSION" == "5" ]; then
+			echo $TOP_DIR
+			ln -rsf $TOP_DIR/debian-bullseye-5 $derck
+			echo "link kernel $RK_KERNEL_VERSION"		
+	fi	
+	fi	
+		
+} 
+
 function usagerootfs()
 {
 	check_config RK_ROOTFS_IMG || return 0
@@ -211,27 +324,29 @@ function usage()
 {
 	echo "Usage: build.sh [OPTIONS]"
 	echo "Available options:"
-	echo "BoardConfig*.mk    -switch to specified board config"
-	echo "lunch              -list current SDK boards and switch to specified board config"
+	echo "*.mk               -switch to specified board config"
+	echo "launch              -list current SDK boards and switch to specified board config"
 	echo "uboot              -build uboot"
 	echo "spl                -build spl"
 	echo "loader             -build loader"
 	echo "kernel             -build kernel"
 	echo "modules            -build kernel modules"
+	echo "modules2           -build kernel modules to rockdev/pack/modules"
 	echo "toolchain          -build toolchain"
+	echo "extboot            -build extlinux boot.img, boot from EFI partition"
 	echo "rootfs             -build default rootfs, currently build buildroot as default"
 	echo "buildroot          -build buildroot rootfs"
 	echo "ramboot            -build ramboot image"
 	echo "multi-npu_boot     -build boot image for multi-npu board"
 	echo "yocto              -build yocto rootfs"
-	echo "debian             -build debian rootfs"
-	echo "distro             -build distro rootfs"
+	echo "debian             -build debian 9 or 10 rootfs !! set in config !!"
 	echo "pcba               -build pcba"
 	echo "recovery           -build recovery"
 	echo "all                -build uboot, kernel, rootfs, recovery image"
 	echo "cleanall           -clean uboot, kernel, rootfs, recovery"
 	echo "firmware           -pack all the image we need to boot up system"
 	echo "updateimg          -pack update image"
+	echo "rawimg             -pack raw image"
 	echo "otapackage         -pack ab update otapackage image (update_ota.img)"
 	echo "sdpackage          -pack update sdcard package image (update_sdcard.img)"
 	echo "save               -save images, patches, commands used to debug"
@@ -241,7 +356,7 @@ function usage()
 	echo "app/<pkg>          -build packages in the dir of app/*"
 	echo "external/<pkg>     -build packages in the dir of external/*"
 	echo ""
-	echo "Default option is 'allsave'."
+	echo "Default option is 'allff'."
 }
 
 function build_info(){
@@ -279,8 +394,6 @@ function build_info(){
 
 	cd kernel
 	make ARCH=$RK_ARCH dtbs -j$RK_JOBS
-
-	build_check_power_domain
 }
 
 function build_check_power_domain(){
@@ -356,8 +469,8 @@ function build_check_power_domain(){
 }
 
 function build_check_cross_compile(){
-
-	case $RK_ARCH in
+	ARCH=${RK_KERNEL_ARCH:-${RK_ARCH}}
+	case $ARCH in
 	arm|armhf)
 		if [ -d "$TOP_DIR/prebuilts/gcc/linux-x86/arm/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf" ]; then
 			CROSS_COMPILE=$(realpath $TOP_DIR)/prebuilts/gcc/linux-x86/arm/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf/bin/arm-linux-gnueabihf-
@@ -383,6 +496,7 @@ function build_check(){
 	cat $common_product_build_tools $target_product_build_tools 2>/dev/null | while read chk_item
 		do
 			chk_item=${chk_item###*}
+			echo $chk_item
 			if [ -z "$chk_item" ]; then
 				continue
 			fi
@@ -487,7 +601,15 @@ function build_uboot(){
 		./make.sh $RK_UBOOT_DEFCONFIG \
 			$UBOOT_COMPILE_COMMANDS
 	fi
+	
+	if [ "$RK_IDBLOCK_UPDATE" = "true" ]; then
+		./make.sh --idblock
+	fi
 
+	if [ "$RK_LOADER_UPDATE_TPL" = "true" ]; then
+		./make.sh --tpl
+	fi
+	
 	if [ "$RK_IDBLOCK_UPDATE_SPL" = "true" ]; then
 		./make.sh --idblock --spl
 	fi
@@ -506,11 +628,16 @@ function build_spl(){
 	echo "============Start building spl============"
 	echo "TARGET_SPL_CONFIG=$RK_SPL_DEFCONFIG"
 	echo "========================================="
-
-	cd u-boot
-	rm -f *spl.bin
-	./make.sh $RK_SPL_DEFCONFIG
-	./make.sh --spl
+	if [ -f u-boot/*spl.bin ]; then
+		rm u-boot/*spl.bin
+	fi
+	cd u-boot && ./make.sh $RK_SPL_DEFCONFIG && ./make.sh spl-s && cd -
+	if [ $? -eq 0 ]; then
+		echo "====Build spl ok!===="
+	else
+		echo "====Build spl failed!===="
+		exit 1
+	fi
 
 	finish_build
 }
@@ -521,9 +648,13 @@ function build_loader(){
 	echo "============Start building loader============"
 	echo "RK_LOADER_BUILD_TARGET=$RK_LOADER_BUILD_TARGET"
 	echo "=========================================="
-
-	cd loader
-	./build.sh $RK_LOADER_BUILD_TARGET
+	cd loader && ./build.sh $RK_LOADER_BUILD_TARGET && cd -
+	if [ $? -eq 0 ]; then
+		echo "====Build loader ok!===="
+	else
+		echo "====Build loader failed!===="
+		exit 1
+	fi
 
 	finish_build
 }
@@ -537,6 +668,7 @@ function build_kernel(){
 	echo "TARGET_KERNEL_DTS    =$RK_KERNEL_DTS"
 	echo "TARGET_KERNEL_CONFIG_FRAGMENT =$RK_KERNEL_DEFCONFIG_FRAGMENT"
 	echo "=========================================="
+	pwd
 
 	build_check_cross_compile
 
@@ -545,7 +677,8 @@ function build_kernel(){
 	make ARCH=$RK_ARCH $RK_KERNEL_DTS.img -j$RK_JOBS
 	if [ -f "$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_KERNEL_FIT_ITS" ]; then
 		$COMMON_DIR/mk-fitimage.sh $TOP_DIR/kernel/$RK_BOOT_IMG \
-			$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_KERNEL_FIT_ITS
+			$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_KERNEL_FIT_ITS \
+			$TOP_DIR/kernel/ramdisk.img
 	fi
 
 	if [ -f "$TOP_DIR/kernel/$RK_BOOT_IMG" ]; then
@@ -553,7 +686,71 @@ function build_kernel(){
 		ln -sf  $TOP_DIR/kernel/$RK_BOOT_IMG $TOP_DIR/rockdev/boot.img
 	fi
 
-	build_check_power_domain
+	finish_build
+}
+
+function build_kerneldeb(){
+	check_config RK_KERNEL_DTS RK_KERNEL_DEFCONFIG || return 0
+
+	echo "============Start building kernel deb============"
+	echo "TARGET_ARCH          =$RK_ARCH"
+	echo "TARGET_KERNEL_CONFIG =$RK_KERNEL_DEFCONFIG"
+	echo "TARGET_KERNEL_DTS    =$RK_KERNEL_DTS"
+	echo "TARGET_KERNEL_CONFIG_FRAGMENT =$RK_KERNEL_DEFCONFIG_FRAGMENT"
+	echo "=========================================="
+	pwd
+	cd kernel
+	make ARCH=$RK_ARCH $RK_KERNEL_DEFCONFIG $RK_KERNEL_DEFCONFIG_FRAGMENT
+	make ARCH=$RK_ARCH bindeb-pkg RK_KERNEL_DTS=$RK_KERNEL_DTS -j$RK_JOBS
+	finish_build
+}
+
+
+function build_extboot(){
+	check_config RK_KERNEL_DTS RK_KERNEL_DEFCONFIG || return 0
+
+	echo "============Start building kernel============"
+	echo "TARGET_ARCH          =$RK_ARCH"
+	echo "TARGET_KERNEL_CONFIG =$RK_KERNEL_DEFCONFIG"
+	echo "TARGET_KERNEL_DTS    =$RK_KERNEL_DTS"
+	echo "TARGET_KERNEL_CONFIG_FRAGMENT =$RK_KERNEL_DEFCONFIG_FRAGMENT"
+	echo "=========================================="
+	pwd
+
+	cd kernel
+	make ARCH=$RK_ARCH $RK_KERNEL_DEFCONFIG $RK_KERNEL_DEFCONFIG_FRAGMENT
+	make ARCH=$RK_ARCH $RK_KERNEL_DTS.img -j$RK_JOBS
+	if [ -f "$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_KERNEL_FIT_ITS" ]; then
+		$COMMON_DIR/mk-fitimage.sh $TOP_DIR/kernel/$RK_BOOT_IMG \
+			$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_KERNEL_FIT_ITS \
+			$TOP_DIR/kernel/ramdisk.img
+	fi
+
+	echo -e "\e[36m Generate extLinuxBoot image start\e[0m"
+
+	EXTBOOT_IMG=${TOP_DIR}/kernel/extboot.img
+	EXTBOOT_DIR=${TOP_DIR}/kernel/extboot
+	rm -rf ${EXTBOOT_DIR} && mkdir -p ${EXTBOOT_DIR}/extlinux
+
+    KERNEL_VERSION=$(cat $TOP_DIR/kernel/include/config/kernel.release)
+	echo "label $RK_KERNEL_DTS linux-$KERNEL_VERSION" > $EXTBOOT_DIR/extlinux/extlinux.conf
+
+    cp ${TOP_DIR}/$RK_KERNEL_IMG $EXTBOOT_DIR/Image-$KERNEL_VERSION
+	echo -e "\tkernel /Image-$KERNEL_VERSION" >> $EXTBOOT_DIR/extlinux/extlinux.conf
+
+    cp ${TOP_DIR}/kernel/arch/${RK_ARCH}/boot/dts/rockchip/${RK_KERNEL_DTS}.dtb $EXTBOOT_DIR
+	echo -e "\tfdt /${RK_KERNEL_DTS}.dtb" >> $EXTBOOT_DIR/extlinux/extlinux.conf
+
+    if [[ -e ${TOP_DIR}/kernel/ramdisk.img ]]; then
+        cp ${TOP_DIR}/kernel/ramdisk.img $EXTBOOT_DIR/initrd-$KERNEL_VERSION
+        echo -e "\tinitrd /initrd-$KERNEL_VERSION" >> $EXTBOOT_DIR/extlinux/extlinux.conf
+    fi
+
+    cp ${TOP_DIR}/kernel/.config $EXTBOOT_DIR/config-$KERNEL_VERSION
+    cp ${TOP_DIR}/kernel/System.map $EXTBOOT_DIR/System.map-$KERNEL_VERSION
+
+    rm -rf $EXTBOOT_IMG && truncate -s 100M $EXTBOOT_IMG
+    fakeroot mkfs.ext4 -Fq -L "boot" -d $EXTBOOT_DIR $EXTBOOT_IMG
 
 	finish_build
 }
@@ -568,10 +765,34 @@ function build_modules(){
 	echo "=================================================="
 
 	build_check_cross_compile
-
-	cd kernel
+	#export INSTALL_MOD_PATH=$TOP_DIR/rockdev/pack/modules/
+	#echo $INSTALL_MOD_PATH
+	cd $TOP_DIR/kernel
 	make ARCH=$RK_ARCH $RK_KERNEL_DEFCONFIG $RK_KERNEL_DEFCONFIG_FRAGMENT
 	make ARCH=$RK_ARCH modules -j$RK_JOBS
+	#make ARCH=$RK_ARCH modules_install
+	
+
+	finish_build
+}
+
+function build2_modules2(){
+	check_config RK_KERNEL_DEFCONFIG || return 0
+
+	echo "============Start building kernel modules============"
+	echo "TARGET_ARCH          =$RK_ARCH"
+	echo "TARGET_KERNEL_CONFIG =$RK_KERNEL_DEFCONFIG"
+	echo "TARGET_KERNEL_CONFIG_FRAGMENT =$RK_KERNEL_DEFCONFIG_FRAGMENT"
+	echo "=================================================="
+	
+	build_check_cross_compile
+	export INSTALL_MOD_PATH=$TOP_DIR/rockdev/pack/modules/
+	echo $INSTALL_MOD_PATH
+	cd $TOP_DIR/kernel
+	make ARCH=$RK_ARCH $RK_KERNEL_DEFCONFIG $RK_KERNEL_DEFCONFIG_FRAGMENT
+	make ARCH=$RK_ARCH modules -j$RK_JOBS
+	make ARCH=$RK_ARCH modules_install
+	
 
 	finish_build
 }
@@ -582,9 +803,15 @@ function build_toolchain(){
 	echo "==========Start building toolchain =========="
 	echo "TARGET_TOOLCHAIN_CONFIG=$RK_CFG_TOOLCHAIN"
 	echo "========================================="
-
-	/usr/bin/time -f "you take %E to build toolchain" \
-		$COMMON_DIR/mk-toolchain.sh $BOARD_CONFIG
+	[[ $RK_CFG_TOOLCHAIN ]] \
+		&& /usr/bin/time -f "you take %E to build toolchain" $COMMON_DIR/mk-toolchain.sh $BOARD_CONFIG \
+		|| echo "No toolchain step, skip!"
+	if [ $? -eq 0 ]; then
+		echo "====Build toolchain ok!===="
+	else
+		echo "====Build toolchain failed!===="
+		exit 1
+	fi
 
 	finish_build
 }
@@ -595,11 +822,17 @@ function build_buildroot(){
 	echo "==========Start building buildroot=========="
 	echo "TARGET_BUILDROOT_CONFIG=$RK_CFG_BUILDROOT"
 	echo "========================================="
-
-	/usr/bin/time -f "you take %E to build builroot" \
-		$COMMON_DIR/mk-buildroot.sh $BOARD_CONFIG
-
-	finish_build
+	if [ -z ${RK_CFG_BUILDROOT} ];then
+		echo "====No Found config on `realpath $BOARD_CONFIG`. Just exit ..."
+		return
+	fi
+	/usr/bin/time -f "you take %E to build builroot" $COMMON_DIR/mk-buildroot.sh $BOARD_CONFIG
+	if [ $? -eq 0 ]; then
+		echo "====Build buildroot ok!===="
+	else
+		echo "====Build buildroot failed!===="
+		exit 1
+	fi
 }
 
 function build_ramboot(){
@@ -608,12 +841,20 @@ function build_ramboot(){
 	echo "=========Start building ramboot========="
 	echo "TARGET_RAMBOOT_CONFIG=$RK_CFG_RAMBOOT"
 	echo "====================================="
+	if [ -z ${RK_CFG_RAMBOOT} ];then
+		echo "====No Found config on `realpath $BOARD_CONFIG`. Just exit ..."
+		return
+	fi
+	/usr/bin/time -f "you take %E to build ramboot" $COMMON_DIR/mk-ramdisk.sh ramboot.img $RK_CFG_RAMBOOT
+	if [ $? -eq 0 ]; then
+		rm $TOP_DIR/rockdev/boot.img
+		ln -rfs $TOP_DIR/buildroot/output/$RK_CFG_RAMBOOT/images/ramboot.img $TOP_DIR/rockdev/boot.img
+		echo "====Build ramboot ok!===="
+	else
+		echo "====Build ramboot failed!===="
+		exit 1
+	fi
 
-	/usr/bin/time -f "you take %E to build ramboot" \
-		$COMMON_DIR/mk-ramdisk.sh ramboot.img $RK_CFG_RAMBOOT
-
-	ln -rsf buildroot/output/$RK_CFG_RAMBOOT/images/ramboot.img \
-		rockdev/boot.img
 
 	finish_build
 }
@@ -645,7 +886,7 @@ function kernel_version(){
 function build_yocto(){
 	check_config RK_YOCTO_MACHINE || return 0
 
-	echo "=========Start building ramboot========="
+	echo "=========Start build ramboot========="
 	echo "TARGET_MACHINE=$RK_YOCTO_MACHINE"
 	echo "====================================="
 
@@ -671,15 +912,20 @@ function build_debian(){
 	echo "=========Start building debian for $ARCH========="
 
 	cd debian
-	if [ ! -e linaro-$RK_DEBIAN_VERSON-$ARCH.tar.gz ]; then
+	if [ ! -e linaro-$RK_DEBIAN_VERSION-$ARCH.tar.gz ]; then
 		RELEASE=$RK_DEBIAN_VERSION TARGET=desktop ARCH=$ARCH ./mk-base-debian.sh
 		ln -rsf linaro-$RK_DEBIAN_VERSION-alip-*.tar.gz linaro-$RK_DEBIAN_VERSION-$ARCH.tar.gz
 	fi
 
 	VERSION=debug ARCH=$ARCH ./mk-rootfs-$RK_DEBIAN_VERSION.sh
 	./mk-image.sh
-
-	finish_build
+	cd ..
+	if [ $? -eq 0 ]; then
+		echo "====Build Debian 10 or 11 ok!===="
+	else
+		echo "====Build Debian 10 or 11 failed!===="
+		exit 1
+	fi
 }
 
 function build_distro(){
@@ -689,12 +935,30 @@ function build_distro(){
 	echo "TARGET_ARCH=$RK_ARCH"
 	echo "RK_DISTRO_DEFCONFIG=$RK_DISTRO_DEFCONFIG"
 	echo "========================================"
+	cd distro && make $RK_DISTRO_DEFCONFIG && /usr/bin/time -f "you take %E to build debian" $TOP_DIR/distro/make.sh && cd -
+	if [ $? -eq 0 ]; then
+		echo "====Build debian ok!===="
+	else
+		echo "====Build debian failed!===="
+		exit 1
+	fi
+}
 
-	cd distro
-	make $RK_DISTRO_DEFCONFIG
-	/usr/bin/time -f "you take %E to build distro" distro/make.sh
+function build_openwrt(){
+    check_config RK_OPENWRT_DEFCONFIG || return 0
+    check_config RK_OPENWRT_VERSION_SELECT || return 0
 
-	finish_build
+	echo "===========Start building $RK_OPENWRT_VERSION_SELECT==========="
+	echo "RK_OPENWRT_DEFCONFIG=$RK_OPENWRT_DEFCONFIG"
+	echo "========================================"
+
+	/usr/bin/time -f "you take %E to build $RK_OPENWRT_VERSION_SELECT" $COMMON_DIR/mk-openwrt.sh $RK_OPENWRT_VERSION_SELECT $RK_OPENWRT_DEFCONFIG 
+	if [ $? -eq 0 ]; then
+		echo "====Build $RK_OPENWRT_VERSION_SELECT ok!===="
+	else
+		echo "====Build $RK_OPENWRT_VERSION_SELECT failed!===="
+		exit 1
+	fi
 }
 
 function build_rootfs(){
@@ -703,40 +967,52 @@ function build_rootfs(){
 	RK_ROOTFS_DIR=.rootfs
 	ROOTFS_IMG=${RK_ROOTFS_IMG##*/}
 
-	rm -rf $RK_ROOTFS_IMG $RK_ROOTFS_DIR
-	mkdir -p ${RK_ROOTFS_IMG%/*} $RK_ROOTFS_DIR
+	if [ "$RK_ROOTFS_SYSTEM" != "ubuntu" ]; then
+		rm -rf $RK_ROOTFS_IMG $RK_ROOTFS_DIR
+		mkdir -p ${RK_ROOTFS_IMG%/*} $RK_ROOTFS_DIR
+	fi
+	
+	if [ "$RK_ROOTFS_SYSTEM" == "yocto" ]; then
+		build_yocto
+		ROOTFS_IMG=yocto/build/tmp/deploy/images/$RK_YOCTO_MACHINE/rootfs.img
+	fi
 
 	case "$1" in
 		yocto)
 			build_yocto
-			ln -rsf yocto/build/latest/rootfs.img \
-				$RK_ROOTFS_DIR/rootfs.ext4
+			ROOTFS_IMG=yocto/build/tmp/deploy/images/$RK_YOCTO_MACHINE/rootfs.img
 			;;
 		debian)
 			build_debian
-			ln -rsf debian/linaro-rootfs.img \
-				$RK_ROOTFS_DIR/rootfs.ext4
+			ROOTFS_IMG=debian/linaro-rootfs.img
 			;;
 		distro)
 			build_distro
-			for f in $(ls distro/output/images/rootfs.*);do
-				ln -rsf $f $RK_ROOTFS_DIR/
-			done
+			ROOTFS_IMG=distro/output/images/rootfs.$RK_ROOTFS_TYPE
+			;;
+		openwrt)
+			build_openwrt
+			ROOTFS_IMG=openwrt_sdk/$RK_OPENWRT_VERSION_SELECT/build_dir/target-aarch64_generic_musl/linux-firefly_armv8/root.ext4
 			;;
 		*)
-			build_buildroot
-			for f in $(ls buildroot/output/$RK_CFG_BUILDROOT/images/rootfs.*);do
-				ln -rsf $f $RK_ROOTFS_DIR/
-			done
+			if [ -n $RK_CFG_BUILDROOT ];then
+				build_buildroot
+				ROOTFS_IMG=buildroot/output/$RK_CFG_BUILDROOT/images/rootfs.$RK_ROOTFS_TYPE
+			fi
 			;;
 	esac
 
-	if [ ! -f "$RK_ROOTFS_DIR/$ROOTFS_IMG" ]; then
-		echo "There's no $ROOTFS_IMG generated..."
-		exit 1
+	[ -z "$ROOTFS_IMG" ] && return
+
+	if [ ! -f "$ROOTFS_IMG" ]; then
+		echo "$ROOTFS_IMG not generated?"
+	else
+		mkdir -p ${RK_ROOTFS_IMG%/*}
+		rm -f $RK_ROOTFS_IMG
+		ln -rsf $TOP_DIR/$ROOTFS_IMG $RK_ROOTFS_IMG
 	fi
 
-	ln -rsf $RK_ROOTFS_DIR/$ROOTFS_IMG $RK_ROOTFS_IMG
+	//ln -rsf $RK_ROOTFS_DIR/$ROOTFS_IMG $RK_ROOTFS_IMG
 
 	finish_build
 }
@@ -747,14 +1023,16 @@ function build_recovery(){
 		RK_CFG_RECOVERY=$RK_UPDATE_SDCARD_CFG_RECOVERY
 	fi
 
-	check_config RK_CFG_RECOVERY || return 0
-
 	echo "==========Start building recovery=========="
 	echo "TARGET_RECOVERY_CONFIG=$RK_CFG_RECOVERY"
 	echo "========================================"
-
-	/usr/bin/time -f "you take %E to build recovery" \
-		$COMMON_DIR/mk-ramdisk.sh recovery.img $RK_CFG_RECOVERY
+	/usr/bin/time -f "you take %E to build recovery" $COMMON_DIR/mk-ramdisk.sh recovery.img $RK_CFG_RECOVERY
+	if [ $? -eq 0 ]; then
+		echo "====Build recovery ok!===="
+	else
+		echo "====Build recovery failed!===="
+		exit 1
+	fi
 
 	finish_build
 }
@@ -765,11 +1043,17 @@ function build_pcba(){
 	echo "==========Start building pcba=========="
 	echo "TARGET_PCBA_CONFIG=$RK_CFG_PCBA"
 	echo "===================================="
-
-	/usr/bin/time -f "you take %E to build pcba" \
-		$COMMON_DIR/mk-ramdisk.sh pcba.img $RK_CFG_PCBA
-
-	finish_build
+	if [ -z ${RK_CFG_PCBA} ];then
+		echo "====No Found config on `realpath $BOARD_CONFIG`. Just exit ..."
+		return
+	fi
+	/usr/bin/time -f "you take %E to build pcba" $COMMON_DIR/mk-ramdisk.sh pcba.img $RK_CFG_PCBA
+	if [ $? -eq 0 ]; then
+		echo "====Build pcba ok!===="
+	else
+		echo "====Build pcba failed!===="
+		exit 1
+	fi
 }
 
 function build_all(){
@@ -802,7 +1086,7 @@ function build_all(){
 
 	build_loader
 	build_kernel
-	build_toolchain
+	build_toolchain && \
 	build_rootfs ${RK_ROOTFS_SYSTEM:-buildroot}
 	build_recovery
 	build_ramboot
@@ -822,28 +1106,98 @@ function build_all(){
 
 function build_cleanall(){
 	echo "clean uboot, kernel, rootfs, recovery"
-
-	cd u-boot
-	make distclean
-	cd -
-	cd kernel
-	make distclean
-	cd -
-	rm -rf buildroot/output
-	rm -rf yocto/build/tmp
-	rm -rf distro/output
-	rm -rf debian/binary
-
-	finish_build
+	cd $TOP_DIR/u-boot/ && make distclean && cd -
+	cd $TOP_DIR/kernel && make distclean && cd -
+	rm -rf $TOP_DIR/buildroot/output
+	rm -rf $TOP_DIR/yocto/build/tmp
+	rm -rf $TOP_DIR/distro/output
+	rm -rf $TOP_DIR/debian/binary
 }
 
 function build_firmware(){
 	./mkfirmware.sh $BOARD_CONFIG
-
-	finish_build
+	if [ $? -eq 0 ]; then
+		echo "Make image ok!"
+	else
+		echo "Make image failed!"
+		exit 1
+	fi
 }
 
-function build_updateimg(){
+
+function gen_file_name() {
+	day=$(date +%Y%m%d)
+	time=$(date +%H%M)
+
+	typeset -u board
+	board=$(basename $(readlink ${BOARD_CONFIG}))
+	board=${board%%.MK}
+	rootfs=$(ls -l $TOP_DIR/rockdev/ | grep rootfs.img | awk -F '/' '{print $(NF)}'|awk -F '_' '{print $2}')
+	board=${board}${rootfs}-GPT
+
+	if [ -n "$1" ];then
+		board=$board-$1
+	fi
+
+	echo -e "File name is \e[36m $board \e[0m"
+	read -t 10 -e -p "Rename the file? [N|y]" ANS || :
+	ANS=${ANS:-n}
+	
+	case $ANS in
+			Y|y|yes|YES|Yes) rename=1;;
+			N|n|no|NO|No) rename=0;;
+			*) rename=0;;
+	esac
+	if [[ ${rename} == "1" ]]; then
+		read -e -p "Enter new file name: " IMGNAME
+		IMGNAME=$IMGNAME
+	fi
+	IMGNAME=${IMGNAME:-$board}
+	IMGNAME=${IMGNAME}-${day}-${time}.img
+}
+
+
+function build_rawimg(){
+
+	 RIMG=$TOP_DIR/rockdev/rootfs.img
+	
+	packm="unpack"
+	[[ -n "$1" ]] && [[ $1 != "-p" ]] && usage 
+	[[ -n "$1" ]] && packm="pack"
+
+	gen_file_name RAW
+
+	if [ $packm == "pack" ];then
+		cd rockdev && ./version.sh $IMGNAME init && cd -
+	fi
+	
+	# if [ "$RK_ROOTFS_SYSTEM" == "yocto" ]; then
+			
+	#if [[ -L $RIMG ]]
+	#	then
+        rm  $RIMG
+		ln -sf $TOP_DIR/rockdev/rootfs.ext4 $RIMG 
+		echo "renew Rootfs to proper IMG"
+		echo "link is $RIMG"
+	
+	#fi	
+	#fi
+
+	if [ -n "$RK_RECOVERY_RAMDISK_RAW" ]; then
+		local mk_path=$(realpath $BOARD_CONFIG)
+		sed -i '$a\'"export RK_RECOVERY_RAMDISK=$RK_RECOVERY_RAMDISK_RAW" $mk_path
+		sed -i '$a\'"export RK_CFG_RECOVERY=" $mk_path
+		if [ -n "$TOP_DIR/rockdev/recovery.img" ]; then
+			mv $TOP_DIR/rockdev/recovery.img $TOP_DIR/rockdev/recovery.img_bk
+		fi
+		build_recovery
+		sed -i "/export RK_RECOVERY_RAMDISK=$RK_RECOVERY_RAMDISK_RAW/d" $mk_path
+		sed -i "/export RK_CFG_RECOVERY=/d" $mk_path
+	else
+		echo "Not found RK_RECOVERY_RAMDISK_RAW!"
+		exit 1
+	fi
+
 	IMAGE_PATH=$TOP_DIR/rockdev
 	PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware
 
@@ -861,20 +1215,83 @@ function build_updateimg(){
 		mv update.img $IMAGE_PATH/update_ab.img
 		ln -fs $source_package_file_name package-file
 	else
-		echo "Make update.img"
+		echo "Make raw.img"
 
 		if [ -f "$RK_PACKAGE_FILE" ]; then
 			source_package_file_name=`ls -lh package-file | awk -F ' ' '{print $NF}'`
 			ln -fs "$RK_PACKAGE_FILE" package-file
-			./mkupdate.sh
+			./mkrawimg.sh
 			ln -fs $source_package_file_name package-file
 		else
-			./mkupdate.sh
+			cd $PACK_TOOL_DIR/rockdev && ./mkrawimg.sh && cd -
 		fi
-		mv update.img $IMAGE_PATH
+	mv $PACK_TOOL_DIR/rockdev/raw.img $IMAGE_PATH/pack/$IMGNAME
+	rm -rf $IMAGE_PATH/raw.img
+	if [ -n "$TOP_DIR/rockdev/recovery.img_bk" ]; then
+		mv $TOP_DIR/rockdev/recovery.img_bk $TOP_DIR/rockdev/recovery.img
 	fi
 
-	finish_build
+	if [ $? -eq 0 ]; then
+	   echo "Make raw image ok!"
+	   echo -e "\e[36m $IMAGE_PATH/pack/$IMGNAME \e[0m"
+	else
+	   echo "Make raw image failed!"
+	   exit 1
+	fi
+
+	if [ $packm == "pack" ];then
+		cd $TOP_DIR/rockdev && ./version.sh $IMGNAME pack && cd -
+	fi
+    fi
+}
+
+function build_sdupdateimg(){
+
+	gen_file_name sdupdate
+
+	IMAGE_PATH=$TOP_DIR/rockdev
+	PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware
+
+	echo "Make sdupdate.img"
+	if [ -f $SD_PARAMETER ]
+	then
+		echo -n "create parameter..."
+		ln -s -f $SD_PARAMETER $ROCKDEV/parameter.txt
+		echo "done."
+	else
+		echo -e "\e[31m error: $SD_PARAMETER not found! \e[0m"
+		exit 1
+	fi
+
+	if [[ x"$RK_SD_PACKAGE_FILE" != x ]];then
+		RK_PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware/rockdev/
+		cd $RK_PACK_TOOL_DIR
+		rm -f package-file
+		ln -sf $RK_SD_PACKAGE_FILE package-file
+	fi
+
+	cd $PACK_TOOL_DIR/rockdev && ./mkupdate.sh && cd -
+	mv $PACK_TOOL_DIR/rockdev/update.img $IMAGE_PATH/pack/$IMGNAME
+	rm -rf $IMAGE_PATH/update.img
+
+	if [ $? -eq 0 ]; then
+	   echo "Make sdupdate image ok!"
+	   echo -e "\e[36m $IMAGE_PATH/pack/$IMGNAME \e[0m"
+	else
+	   echo "Make sdupdate image failed!"
+	fi
+
+	if [ -f $PARAMETER ]
+	then
+		ln -s -f $PARAMETER $ROCKDEV/parameter.txt
+	fi
+
+	if [[ x"$RK_PACKAGE_FILE" != x ]];then
+		RK_PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware/rockdev/
+		cd $RK_PACK_TOOL_DIR
+		rm -f package-file
+		ln -sf $RK_PACKAGE_FILE package-file
+	fi
 }
 
 function build_otapackage(){
@@ -957,14 +1374,13 @@ function build_save(){
 	mkdir -p $STUB_PATH
 
 	#Generate patches
-	.repo/repo/repo forall -c \
-		"$TOP_DIR/device/rockchip/common/gen_patches_body.sh"
+	$TOP_DIR/.repo/repo/repo forall -c "$TOP_DIR/device/rockchip/common/gen_patches_body.sh"
 
 	#Copy stubs
-	.repo/repo/repo manifest -r -o $STUB_PATH/manifest_${DATE}.xml
+	$TOP_DIR/.repo/repo/repo manifest -r -o $STUB_PATH/manifest_${DATE}.xml
 	mkdir -p $STUB_PATCH_PATH/kernel
-	cp kernel/.config $STUB_PATCH_PATH/kernel
-	cp kernel/vmlinux $STUB_PATCH_PATH/kernel
+	cp $TOP_DIR/kernel/.config $STUB_PATCH_PATH/kernel
+	cp $TOP_DIR/kernel/vmlinux $STUB_PATCH_PATH/kernel
 	mkdir -p $STUB_PATH/IMAGES/
 	cp $IMAGE_PATH/* $STUB_PATH/IMAGES/
 
@@ -973,7 +1389,78 @@ function build_save(){
 	echo "KERNEL: defconfig: $RK_KERNEL_DEFCONFIG, dts: $RK_KERNEL_DTS" >> $STUB_PATH/build_cmd_info
 	echo "BUILDROOT: $RK_CFG_BUILDROOT" >> $STUB_PATH/build_cmd_info
 
+}
+
+function build_updateimg(){
+	packm="unpack"
+	[[ -n "$1" ]] && [[ $1 != "-p" ]] && usage 
+	[[ -n "$1" ]] && packm="pack"
+
+	gen_file_name 
+
+	if [ $packm == "pack" ];then
+		cd $TOP_DIR/rockdev \
+		&& ./version.sh $IMGNAME init $2 && cd -
+	fi
+	
+	IMAGE_PATH=$TOP_DIR/rockdev
+	PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware
+
+	cd $PACK_TOOL_DIR/rockdev
+
+	if [ -f "$RK_PACKAGE_FILE_AB" ]; then
+		build_sdcard_package
+		build_otapackage
+
+		cd $PACK_TOOL_DIR/rockdev
+		echo "Make Linux a/b update_ab.img."
+		source_package_file_name=`ls -lh package-file | awk -F ' ' '{print $NF}'`
+		ln -fs "$RK_PACKAGE_FILE_AB" package-file
+		./mkupdate.sh
+		mv update.img $IMAGE_PATH/update_ab.img
+		ln -fs $source_package_file_name package-file
+	else
+		echo "Make update.img"
+
+		if [ -f "$RK_PACKAGE_FILE" ]; then
+			source_package_file_name=`ls -lh package-file | awk -F ' ' '{print $NF}'`
+			ln -fs "$RK_PACKAGE_FILE" package-file
+			./mkupdate.sh
+			ln -fs $source_package_file_name package-file
+		else
+			./mkupdate.sh
+		fi
+		mv update.img $IMAGE_PATH
+	fi
+	
+	mv $IMAGE_PATH/update.img $IMAGE_PATH/pack/$IMGNAME
+	rm -rf $IMAGE_PATH/update.img
+	if [ $? -eq 0 ]; then
+	   echo "Make update image ok!"
+	   echo -e "\e[36m $IMAGE_PATH/pack/$IMGNAME \e[0m"
+	else
+	   echo "Make update image failed!"
+	   exit 1
+	fi
+
+    [ -z "$RK_PRODUCT_MODEL" ] && RK_PRODUCT_MODEL=${RK_KERNEL_DTS}
+    [ -z "$RK_DRM_VERSION" ] && RK_DRM_VERSION=1
+    [[ "${RK_TARGET_PRODUCT^^}" == RK356* ]]  && RK_DRM_VERSION=100
+    command -v ffgenswv.bin > /dev/null 2>&1 && \
+    ffgenswv.bin -b ${RK_TARGET_PRODUCT^^} \
+                -m ${RK_PRODUCT_MODEL^^} \
+                -V ${RK_DRM_VERSION} \
+                -u $IMAGE_PATH/pack/$IMGNAME \
+                -o $IMAGE_PATH/ffimage.swv
+
 	finish_build
+}
+
+
+function build_allff(){
+	build_all
+	build_firmware
+	build_updateimg
 }
 
 function build_allsave(){
@@ -982,8 +1469,6 @@ function build_allsave(){
 	build_firmware
 	build_updateimg
 	build_save
-
-	build_check_power_domain
 
 	finish_build
 }
@@ -1002,35 +1487,67 @@ if echo $@|grep -wqE "help|-h"; then
 	exit 0
 fi
 
-OPTIONS="${@:-allsave}"
+OPTIONS="${@:-allff}"
 
-[ -f "device/rockchip/$RK_TARGET_PRODUCT/$RK_BOARD_PRE_BUILD_SCRIPT" ] \
-	&& source "device/rockchip/$RK_TARGET_PRODUCT/$RK_BOARD_PRE_BUILD_SCRIPT"  # board hooks
+[ -f "$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_BOARD_PRE_BUILD_SCRIPT" ] \
+	&& source "$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_BOARD_PRE_BUILD_SCRIPT"  # board hooks
 
 for option in ${OPTIONS}; do
 	echo "processing option: $option"
+		changekernel
+		changedebian
 	case $option in
 		BoardConfig*.mk)
 			option=device/rockchip/$RK_TARGET_PRODUCT/$option
 			;&
 		*.mk)
-			CONF=$(realpath $option)
-			echo "switching to board: $CONF"
-			if [ ! -f $CONF ]; then
-				echo "not exist!"
-				exit 1
+			if [ -f $option ]; then
+				CONF=${option}
+			else
+				CONF=$(find $CFG_DIR -name $option)
+				echo "switching to board: $CONF"
+				if [ ! -f $CONF ]; then
+					echo "not exist!"
+					exit 1
+				fi
 			fi
 
-			ln -rsf $CONF $BOARD_CONFIG
+		    ln -rsf $CONF $BOARD_CONFIG
+
+			unset RK_PACKAGE_FILE
+			source $CONF
+			if [[ x"$RK_PACKAGE_FILE" != x ]];then
+				PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware/rockdev/
+				cd $PACK_TOOL_DIR
+				rm -f package-file
+				ln -sf $RK_PACKAGE_FILE package-file
+			fi
+
+			if [[ x"$RK_PARAMETER" != x ]];then
+				PARAMETER=$TOP_DIR/device/rockchip/$RK_TARGET_PRODUCT/$RK_PARAMETER
+				ln -sf $PARAMETER $ROCKDEV/parameter.txt
+			else
+				echo -e "\e[31m error: $SD_PARAMETER not found! \e[0m"
+			fi
+    
+		    MKUPDATE_FILE=${RK_TARGET_PRODUCT}-mkupdate.sh 
+		    if [[ x"$MKUPDATE_FILE" != x-mkupdate.sh ]];then
+				PACK_TOOL_DIR=$TOP_DIR/tools/linux/Linux_Pack_Firmware/rockdev/
+				cd $PACK_TOOL_DIR
+				rm -f mkupdate.sh
+				ln -sf $MKUPDATE_FILE mkupdate.sh
+			fi
 			;;
-		lunch) build_select_board ;;
+		launch) build_select_board ;;
 		all) build_all ;;
 		save) build_save ;;
 		allsave) build_allsave ;;
+		allff) build_allff ;;
 		check) build_check ;;
 		cleanall) build_cleanall ;;
 		firmware) build_firmware ;;
 		updateimg) build_updateimg ;;
+		rawimg) build_rawimg ;;
 		otapackage) build_otapackage ;;
 		sdpackage) build_sdcard_package ;;
 		toolchain) build_toolchain ;;
@@ -1038,7 +1555,10 @@ for option in ${OPTIONS}; do
 		uboot) build_uboot ;;
 		loader) build_loader ;;
 		kernel) build_kernel ;;
+		extboot) build_extboot ;;
+		kerneldeb) build_kerneldeb ;;
 		modules) build_modules ;;
+		modules2) build2_modules2 ;;
 		rootfs|buildroot|debian|distro|yocto) build_rootfs $option ;;
 		pcba) build_pcba ;;
 		ramboot) build_ramboot ;;
