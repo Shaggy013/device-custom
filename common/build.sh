@@ -1012,7 +1012,7 @@ function build_rootfs(){
 		ln -rsf $TOP_DIR/$ROOTFS_IMG $RK_ROOTFS_IMG
 	fi
 
-	//ln -rsf $RK_ROOTFS_DIR/$ROOTFS_IMG $RK_ROOTFS_IMG
+	#ln -rsf $RK_ROOTFS_DIR/$ROOTFS_IMG $RK_ROOTFS_IMG
 
 	finish_build
 }
