@@ -19,6 +19,8 @@ export RK_KERNEL_VERSION=5
 export RK_PARAMETER=parameter-buildroot-fit.txt
 # Set debian version (debian10: buster, debian11: bullseye)
 export RK_DEBIAN_VERSION=bullseye
+# Set Ubuntu 20.04 or 18.04
+export RK_UBUNTU_VERSION=20.04
 # rootfs_system buildroot debian yocto distro openwrt
 export RK_ROOTFS_SYSTEM=buildroot
 # OEM build on buildroot

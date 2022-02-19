@@ -242,13 +242,13 @@ function changedebian()
 	if [ "$RK_DEBIAN_VERSION" == "buster" ]; then
 		if [ "$RK_KERNEL_VERSION" == "4" ]; then
 			ln -rsf $TOP_DIR/debian-buster-4 $derck
-			echo "link kernel $RK_KERNEL_VERSION"
+			echo "link Debian $RK_DEBIAN_VERSION"
 		fi
 	
 		if [ "$RK_KERNEL_VERSION" == "5" ]; then
 			echo $TOP_DIR
 			ln -rsf $TOP_DIR/debian-buster-5 $derck
-			echo "link kernel $RK_KERNEL_VERSION"		
+			echo "link Debian $RK_DEBIAN_VERSION"		
 		fi
 		fi
 		
@@ -256,13 +256,60 @@ function changedebian()
 	if [ "$RK_DEBIAN_VERSION" == "bullseye" ]; then
 		if [ "$RK_KERNEL_VERSION" == "4" ]; then
 			ln -rsf $TOP_DIR/debian-bullseye-4 $derck
-			echo "link kernel $RK_KERNEL_VERSION"
+			echo "link Debian $RK_DEBIAN_VERSION"
 		fi
 	
 		if [ "$RK_KERNEL_VERSION" == "5" ]; then
 			echo $TOP_DIR
 			ln -rsf $TOP_DIR/debian-bullseye-5 $derck
-			echo "link kernel $RK_KERNEL_VERSION"		
+			echo "link Debian $RK_DEBIAN_VERSION"		
+	fi	
+	fi	
+		
+} 
+
+function changeubuntu()
+{
+	check_config RK_UBUNTU_VERSION || return 0
+	
+	echo "link Ubuntu to proper Ubuntu-distro"
+	
+	uerck=$TOP_DIR/ubuntu
+	
+	if [[ -L $uerck && -d $uerck ]]
+		then
+        rm $derck
+		echo "renew Ubuntu to proper Ubuntu-Distro"
+	else 
+		echo "!! Own Ubuntu ? !!"
+	fi
+	
+	echo "link Ubuntu to 18.04 or 20.04"
+	
+	if [ "$RK_UBUNTU_VERSION" == "18.04" ]; then
+		if [ "$RK_KERNEL_VERSION" == "4" ]; then
+			ln -rsf $TOP_DIR/ubuntu-18.04-4 $uerck
+			echo "link Ubuntu $RK_UBUNTU_VERSION"
+		fi
+	
+		if [ "$RK_KERNEL_VERSION" == "5" ]; then
+			echo $TOP_DIR
+			ln -rsf $TOP_DIR/ubuntu-18.04-5 $uerck
+			echo "link Ubuntu $RK_UBUNTU_VERSION"		
+		fi
+		fi
+		
+		
+	if [ "$RK_UBUNTU_VERSION" == "20.04" ]; then
+		if [ "$RK_KERNEL_VERSION" == "4" ]; then
+			ln -rsf $TOP_DIR/ubuntu-20.04-4 $uerck
+			echo "link Ubuntu $RK_UBUNTU_VERSION"
+		fi
+	
+		if [ "$RK_KERNEL_VERSION" == "5" ]; then
+			echo $TOP_DIR
+			ln -rsf $TOP_DIR/ubuntu-20.04-5 $uerck
+			echo "link Ubuntu $RK_UBUNTU_VERSION"		
 	fi	
 	fi	
 		
@@ -340,6 +387,7 @@ function usage()
 	echo "multi-npu_boot     -build boot image for multi-npu board"
 	echo "yocto              -build yocto rootfs"
 	echo "debian             -build debian 9 or 10 rootfs !! set in config !!"
+	echo "ubuntu             -build ubuntu 18.04 or 20.04 rootfs !! set in config !!"
 	echo "pcba               -build pcba"
 	echo "recovery           -build recovery"
 	echo "all                -build uboot, kernel, rootfs, recovery image"
@@ -919,6 +967,7 @@ function build_debian(){
 
 	VERSION=debug ARCH=$ARCH ./mk-rootfs-$RK_DEBIAN_VERSION.sh
 	./mk-image.sh
+
 	cd ..
 	if [ $? -eq 0 ]; then
 		echo "====Build Debian 10 or 11 ok!===="
@@ -927,6 +976,34 @@ function build_debian(){
 		exit 1
 	fi
 }
+
+function build_ubuntu(){
+	ARCH=${RK_UBUNTU_ARCH:-${RK_ARCH}}
+	case $ARCH in
+		arm|armhf) ARCH=armhf ;;
+		*) ARCH=arm64 ;;
+	esac
+
+	echo "=========Start building Ubuntu for $ARCH========="
+
+	cd ubuntu
+	if [ ! -e linaro-$RK_UBUNTU_VERSION-$ARCH.tar.gz ]; then
+		RELEASE=$RK_UBUNTU_VERSION TARGET=desktop ARCH=$ARCH ./mk-base-ubuntu.sh
+		ln -rsf linaro-$RK_UBUNTU_VERSION-alip-*.tar.gz linaro-$RK_UBUNTU_VERSION-$ARCH.tar.gz
+	fi
+
+	VERSION=debug ARCH=$ARCH ./mk-rootfs-$RK_UBUNTU_VERSION.sh
+	./mk-image.sh
+
+	cd ..
+	if [ $? -eq 0 ]; then
+		echo "====Build Ubuntu ok!===="
+	else
+		echo "====Build Ubuntu failed!===="
+		exit 1
+	fi
+}
+
 
 function build_distro(){
 	check_config RK_DISTRO_DEFCONFIG || return 0
@@ -1496,6 +1573,7 @@ for option in ${OPTIONS}; do
 	echo "processing option: $option"
 		changekernel
 		changedebian
+		changeubuntu
 	case $option in
 		BoardConfig*.mk)
 			option=device/rockchip/$RK_TARGET_PRODUCT/$option
@@ -1559,7 +1637,7 @@ for option in ${OPTIONS}; do
 		kerneldeb) build_kerneldeb ;;
 		modules) build_modules ;;
 		modules2) build2_modules2 ;;
-		rootfs|buildroot|debian|distro|yocto) build_rootfs $option ;;
+		rootfs|buildroot|debian|distro|yocto|ubuntu) build_rootfs $option ;;
 		pcba) build_pcba ;;
 		ramboot) build_ramboot ;;
 		recovery) build_recovery ;;
