@@ -263,7 +263,7 @@ function changedebian()
 			echo $TOP_DIR
 			ln -rsf $TOP_DIR/debian-bullseye-5 $derck
 			echo "link Debian $RK_DEBIAN_VERSION"		
-	fi	
+	fi
 	fi	
 		
 } 
@@ -278,7 +278,7 @@ function changeubuntu()
 	
 	if [[ -L $uerck && -d $uerck ]]
 		then
-        rm $derck
+        rm $uerck
 		echo "renew Ubuntu to proper Ubuntu-Distro"
 	else 
 		echo "!! Own Ubuntu ? !!"
