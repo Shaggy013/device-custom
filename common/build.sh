@@ -263,7 +263,7 @@ function changedebian()
 			echo $TOP_DIR
 			ln -rsf $TOP_DIR/debian-bullseye-5 $derck
 			echo "link Debian $RK_DEBIAN_VERSION"		
-	fi
+	fi	
 	fi	
 		
 } 
@@ -992,7 +992,7 @@ function build_ubuntu(){
 		ln -rsf linaro-$RK_UBUNTU_VERSION-alip-*.tar.gz linaro-$RK_UBUNTU_VERSION-$ARCH.tar.gz
 	fi
 
-	VERSION=debug ARCH=$ARCH ./mk-rootfs-$RK_UBUNTU_VERSION.sh
+	VERSION=debug ARCH=$ARCH ./mk-rootfs-ubuntu.sh
 	./mk-image.sh
 
 	cd ..
@@ -1044,10 +1044,10 @@ function build_rootfs(){
 	RK_ROOTFS_DIR=.rootfs
 	ROOTFS_IMG=${RK_ROOTFS_IMG##*/}
 
-	if [ "$RK_ROOTFS_SYSTEM" != "ubuntu" ]; then
-		rm -rf $RK_ROOTFS_IMG $RK_ROOTFS_DIR
-		mkdir -p ${RK_ROOTFS_IMG%/*} $RK_ROOTFS_DIR
-	fi
+	# if [ "$RK_ROOTFS_SYSTEM" != "ubuntu" ]; then
+	#	rm -rf $RK_ROOTFS_IMG $RK_ROOTFS_DIR
+	#	mkdir -p ${RK_ROOTFS_IMG%/*} $RK_ROOTFS_DIR
+	#fi
 	
 	if [ "$RK_ROOTFS_SYSTEM" == "yocto" ]; then
 		build_yocto
@@ -1066,6 +1066,10 @@ function build_rootfs(){
 		distro)
 			build_distro
 			ROOTFS_IMG=distro/output/images/rootfs.$RK_ROOTFS_TYPE
+			;;
+		ubuntu)
+			build_ubuntu
+			ROOTFS_IMG=distro/output/images/ubuntu.img
 			;;
 		openwrt)
 			build_openwrt
